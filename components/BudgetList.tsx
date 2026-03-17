@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Budget } from '../types';
 import { Plus, Edit, Trash2, Search, Car, DollarSign, Download, Upload } from 'lucide-react';
 import { db } from '../services/db';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface BudgetListProps {
   budgets: Budget[];
@@ -33,6 +35,7 @@ const BudgetList: React.FC<BudgetListProps> = ({ budgets, onNew, onEdit, onDelet
 
   const handleExport = async () => {
     try {
+      // 1. Export JSON backup
       const json = await db.exportData();
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -43,7 +46,47 @@ const BudgetList: React.FC<BudgetListProps> = ({ budgets, onNew, onEdit, onDelet
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      // 2. Export PDF of filtered budgets
+      const doc = new jsPDF();
+      
+      doc.setFontSize(18);
+      doc.text('Relatório de Orçamentos', 14, 22);
+      
+      doc.setFontSize(11);
+      doc.setTextColor(100);
+      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, 30);
+      
+      if (searchTerm) {
+        doc.text(`Filtro aplicado: "${searchTerm}"`, 14, 36);
+      }
+      
+      doc.text(`Total de registros: ${totalCount}`, 14, searchTerm ? 42 : 36);
+      doc.text(`Valor Total: R$ ${totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, searchTerm ? 48 : 42);
+
+      const startY = searchTerm ? 54 : 48;
+
+      const tableData = filteredBudgets.map(b => [
+        `#${b.id}`,
+        new Date(b.createdAt).toLocaleDateString('pt-BR'),
+        b.clientData.name || 'Sem nome',
+        b.clientData.vehicle || '---',
+        b.clientData.plate || '---',
+        `R$ ${b.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      ]);
+
+      autoTable(doc, {
+        startY: startY,
+        head: [['Nº', 'Data', 'Cliente', 'Veículo', 'Placa', 'Valor Total']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [41, 128, 185] },
+      });
+
+      doc.save(`relatorio_orcamentos_${new Date().toISOString().split('T')[0]}.pdf`);
+
     } catch (error) {
+      console.error(error);
       alert("Erro ao exportar dados.");
     }
   };
